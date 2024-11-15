@@ -1,0 +1,34 @@
+# R-specific files
+.Rhistory
+.RData
+.Ruserdata
+
+# RStudio project files
+.Rproj.user/
+.Rproj
+
+# renv package management
+renv/library/    # Cache of installed packages (not needed in the repo)
+renv/staging/    # Temporary package storage during renv::install()
+
+# Logs and temporary files
+*.log
+*.out
+*.tmp
+
+# Operating system files
+.DS_Store        # macOS
+Thumbs.db        # Windows
+
+# General temporary files
+*.swp            # Vim/vi swap files
+*.bak
+*.tmp
+
+# Ignored output files
+*.csv
+*.tsv
+*.rds
+*.rdata
+*.html
+
