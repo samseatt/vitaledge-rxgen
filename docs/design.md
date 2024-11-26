@@ -1,230 +1,177 @@
-### **VitalEdge RxGen - Detailed Design Document**
+### **VitalEdge RxGen Design Document**
 
-This **Detailed Design Document** ensures that RxGen meets its functional, technical, and integration requirements while adhering to best practices for modular development.
+#### **1. Introduction**
+The **RxGen module** of the VitalEdge system is a specialized R-based pipeline designed for **pharmacogenomic variant annotation**. It processes **VCF files** (containing genomic variant data), annotates them with drug-related information using a preloaded **pharmacogenomic_annotations catalog**, and stores the results in a **patient-specific table in the datalake**. 
 
-#### **Project Name**:  
-**VitalEdge RxGen**  
-
-#### **Repository Name**:  
-`vitaledge-rxgen`
+With the integration of **DataBridge**, RxGen can now receive input VCF files programmatically through a unified handoff interface. This design aligns RxGen with the broader data ingestion workflow of VitalEdge while maintaining support for manual operation via its **Shiny UI** for small-scale or ad-hoc tasks.
 
 ---
 
-## **1. Overview**
-
-The **VitalEdge RxGen** module is a computational pipeline designed to process genomic Variant Call Format (VCF) files, annotate genetic variants with pharmacogenomic data, and store actionable insights in the **vitaledge_datalake**. This document provides a detailed design for the RxGen pipeline, focusing on modularity, reusability, and seamless integration with the broader **VitalEdge R Pipelines** ecosystem.
-
----
-
-## **2. Architecture**
-
-The architecture of RxGen is designed to ensure modularity, scalability, and interoperability with other VitalEdge modules. The pipeline consists of the following components:
-
-### **2.1 High-Level Architecture**
-
-```plaintext
-+------------------+       +--------------------+       +-----------------------+
-|   Input Layer    |  -->  | Processing Layer   |  -->  |   Output Layer        |
-+------------------+       +--------------------+       +-----------------------+
-       |                          |                               |
-    VCF Files               Variant Parsing              Database (vitaledge_
-       |                   + Pharmacogenomics            datalake) + Shiny
- External APIs             Annotation                   Interface
-```
-
-1. **Input Layer**:
-   - Accepts VCF files.
-   - Ensures validation and standardization of input data.
-2. **Processing Layer**:
-   - Parses variants using `VariantAnnotation`.
-   - Annotates variants using external APIs (e.g., PharmGKB, ClinVar).
-   - Normalizes data for storage.
-3. **Output Layer**:
-   - Saves annotated results to the PostgreSQL **vitaledge_datalake**.
-   - Provides a Shiny interface for visualization and interaction.
+#### **2. Objectives**
+- **Seamless integration with DataBridge**: RxGen will receive input VCF files from DataBridge in a standardized manner.
+- **Efficient processing**: Annotate only the variants present in the pharmacogenomic catalog, minimizing computational overhead.
+- **Database integration**: Save the annotated results in the datalake's `patient_annotations` table.
+- **Flexibility**: Allow both automated (via REST API) and manual (via Shiny UI) processing of files.
+- **Extensibility**: Ensure the system is modular for future enhancements, such as additional annotation sources or extended reporting capabilities.
 
 ---
 
-### **2.2 Detailed Pipeline Workflow**
+#### **3. High-Level Architecture**
+RxGen is designed to operate as a microservice within the VitalEdge ecosystem. The key architectural components are:
 
-1. **VCF Input Validation**:
-   - Validate the uploaded VCF file for standard compliance (e.g., metadata, format version).
-   - Extract essential fields: sample ID, genomic coordinates, variant ID (e.g., rsID).
+1. **Input Handling**:
+   - Receives VCF files from DataBridge through a REST API or processes files from a predefined folder.
+   - Supports manual file upload through Shiny UI for ad-hoc annotations.
 
-2. **Variant Parsing**:
-   - Parse VCF files using `VariantAnnotation` to extract key details:
-     - Chromosome, position, reference allele, alternate allele.
-     - Variant type (e.g., SNP, indel).
-     - Functional annotations if available.
+2. **Pharmacogenomic Annotation**:
+   - Matches variants from the VCF file with entries in the `pharmacogenomic_annotations` catalog table in the datalake.
+   - Discards variants not found in the catalog.
 
-3. **Pharmacogenomic Annotation**:
-   - Query external databases (e.g., PharmGKB, ClinVar) for:
-     - Gene-drug interactions.
-     - Variant consequences (e.g., pathogenicity, benignity).
-     - Drug response information (e.g., poor metabolizer, toxicity risk).
-   - Combine annotations into a unified format.
+3. **Output Management**:
+   - Saves results into the `patient_annotations` table with proper schema and referential integrity.
 
-4. **Data Transformation**:
-   - Normalize variant annotations for storage:
-     - Map extracted fields to database schema.
-     - Standardize data types and formats.
-
-5. **Data Storage**:
-   - Insert processed results into the `pharmacogenomic_annotations` table in **vitaledge_datalake**.
-   - Include metadata (e.g., processing timestamps, data sources).
-
-6. **Visualization and Reporting**:
-   - Provide interactive dashboards via Shiny for:
-     - Uploading VCF files.
-     - Querying annotated data.
-     - Exporting reports (CSV, JSON).
+4. **Interfaces**:
+   - **REST API**: For automated integration with DataBridge and external systems.
+   - **Shiny UI**: For manual operation, status monitoring, and result visualization.
 
 ---
 
-## **3. Database Design**
+#### **4. Workflow**
+The workflow for RxGen is as follows:
 
-### **3.1 Database Integration**
-RxGen integrates with the **vitaledge_datalake**, a PostgreSQL-based central repository. The database schema ensures scalability and compatibility with future pipelines.
+1. **Input**:
+   - A VCF file is placed in the `queued` folder by DataBridge or manually.
+   - The file location is communicated via REST API or selected through the Shiny UI.
 
-### **3.2 Schema for Pharmacogenomic Annotations**
-```sql
-CREATE TABLE pharmacogenomic_annotations (
-    id SERIAL PRIMARY KEY,
-    patient_id UUID NOT NULL,
-    variant_id TEXT NOT NULL,
-    gene_symbol TEXT NOT NULL,
-    drug TEXT NOT NULL,
-    interaction_type TEXT,
-    clinical_significance TEXT,
-    annotation_source TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
+2. **Processing**:
+   - The VCF file is parsed using Bioconductor packages (e.g., `VariantAnnotation`).
+   - The `rsID` values from the file are extracted and queried against the `pharmacogenomic_annotations` catalog.
+   - Matching annotations are processed to generate a `patient_annotations` dataset.
 
-- **`patient_id`**: Unique identifier for the patient (linked to broader patient data in the data lake).
-- **`variant_id`**: Genomic variant identifier (e.g., rsID).
-- **`gene_symbol`**: Gene affected by the variant.
-- **`drug`**: Drug interacting with the gene/variant.
-- **`interaction_type`**: Type of interaction (e.g., metabolizer, toxicity risk).
-- **`clinical_significance`**: Clinical interpretation (e.g., pathogenic, benign).
-- **`annotation_source`**: Source of the annotation (e.g., PharmGKB, ClinVar).
-- **`created_at`**: Timestamp for provenance tracking.
+3. **Output**:
+   - The annotated results are inserted into the `patient_annotations` table in the datalake.
+   - Logs are created for successful or failed processing.
+
+4. **Feedback**:
+   - REST API returns success/failure status and logs.
+   - Shiny UI displays the results in a table and allows for CSV downloads.
 
 ---
 
-## **4. Modular Design**
+#### **5. Integration with DataBridge**
+RxGen integrates with DataBridge to streamline its input handling:
 
-RxGen leverages reusable components from the shared `vitaledge-r-pipe` repository and builds pipeline-specific modules.
+1. **Input Handoff**:
+   - DataBridge places VCF files into a designated folder and sends a notification to RxGen's REST API (`/process`).
 
-### **4.1 Shared Components**
-- **Database Utilities (`db_utils.R`)**:
-  - Functions for connecting to PostgreSQL.
-  - Example:
-    ```R
-    connect_to_db <- function(config_file) {
-      config <- yaml::read_yaml(config_file)
-      DBI::dbConnect(RPostgres::Postgres(), dbname = config$dbname, ...)
-    }
-    ```
+2. **REST API Workflow**:
+   - RxGen reads the file location from the API request.
+   - The file is processed and results are saved into the datalake.
 
-- **API Utilities (`api_utils.R`)**:
-  - Functions for querying external APIs (e.g., PharmGKB).
-  - Example:
-    ```R
-    query_pharmgkb <- function(variant_id) {
-      response <- httr::GET("https://api.pharmgkb.org/v1/data/variant", query = list(variant = variant_id))
-      jsonlite::fromJSON(httr::content(response, as = "text"))
-    }
-    ```
-
-- **Logging and Error Handling (`logging.R`)**:
-  - Centralized logging for error tracking and debugging.
+3. **Error Handling**:
+   - DataBridge is informed of any errors during processing via the API response.
 
 ---
 
-### **4.2 Pipeline-Specific Modules**
-- **Variant Parsing (`vcf_processing.R`)**:
-  - Extracts variant data using `VariantAnnotation`.
-- **Pharmacogenomic Annotation (`pharmgkb_annotation.R`)**:
-  - Integrates variant data with external annotation sources.
-- **Shiny Interface**:
-  - Built using `shiny` with separate UI and server components.
+#### **6. Database Schema**
+
+**`pharmacogenomic_annotations` Table (Catalog Table)**
+- Stores preloaded pharmacogenomic annotation data.
+- Primary Key: `variant_id`.
+
+**`patient_annotations` Table (Destination Table)**
+- Stores patient-specific annotated results.
+- Schema:
+  ```sql
+  CREATE TABLE patient_annotations (
+      id SERIAL PRIMARY KEY,
+      patient_id VARCHAR(255) NOT NULL,
+      rs_id VARCHAR(255) NOT NULL,
+      drug_id VARCHAR(255) NOT NULL,
+      significance TEXT,
+      notes TEXT,
+      direction_of_effect TEXT,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW() ON UPDATE NOW(),
+      UNIQUE (patient_id, rs_id, drug_id)
+  );
+  ```
 
 ---
 
-## **5. Shiny App Design**
+#### **7. Interfaces**
 
-### **5.1 User Interface (UI)**
-1. **File Upload**:
-   - Allow users to upload VCF files.
-2. **Annotation Results**:
-   - Display annotated variants in a searchable table.
-3. **Visualization**:
-   - Include plots for:
-     - Gene-variant interactions.
-     - Drug categories.
-4. **Export Options**:
-   - Provide buttons to download results as CSV or JSON.
+1. **REST API**:
+   - **Endpoint**: `/process`
+     - **Method**: POST
+     - **Payload**: `{ "patient_id": "12345", "vcf_file": "/path/to/file.vcf" }`
+     - **Response**: `{ "status": "success", "message": "File processed successfully." }`
+   - **Uses**: Automated input from DataBridge.
 
-### **5.2 Server Logic**
-1. Process the uploaded VCF file asynchronously.
-2. Trigger variant parsing and annotation functions.
-3. Store results in the database and cache for real-time queries.
+2. **Shiny UI**:
+   - **Features**:
+     - File upload for manual processing.
+     - Folder processing for batch operations.
+     - Results table and CSV export.
 
 ---
 
-## **6. API Integration**
+#### **8. Code Modules**
 
-### **6.1 PharmGKB API**
-- **Endpoint**: `https://api.pharmgkb.org/v1/data/variant`
-- **Query Parameters**:
-  - `variant`: Variant identifier (e.g., rsID).
+**`src/vcf_processing.R`**:
+- Handles VCF file parsing and extraction of `rsID`.
 
-### **6.2 ClinVar API**
-- **Endpoint**: `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/`
-- **Query Parameters**:
-  - `db`: Database (e.g., ClinVar).
-  - `term`: Search term (e.g., variant ID).
+**`src/db_queries.R`**:
+- Contains functions for database connection, fetching catalog data, and saving patient annotations.
 
----
+**`src/annotations.R`**:
+- Combines VCF processing and annotation logic.
 
-## **7. Testing and Validation**
+**`rest/app.R`**:
+- Implements the REST API for integration with DataBridge.
 
-### **7.1 Unit Testing**
-- **Tools**: `testthat`
-- **Examples**:
-  - Test VCF parsing logic.
-  - Validate API responses against known inputs.
-
-### **7.2 Integration Testing**
-- Test end-to-end functionality:
-  - Upload VCF → Parse → Annotate → Store → Visualize.
+**`shiny/ui.R` and `shiny/server.R`**:
+- Provides the Shiny UI for manual operation.
 
 ---
 
-## **8. Deployment**
+#### **9. Deployment**
 
-### **8.1 Shiny App**
-- **Hosting Options**:
-  - RStudio Connect for enterprise hosting.
-  - Shiny Server for self-hosted environments.
+1. **Requirements**:
+   - R version 4.4+.
+   - PostgreSQL with the required tables created in the datalake.
 
-### **8.2 Pipeline Automation**
-- Use `cron` or task schedulers to run the pipeline for batch processing.
+2. **Environment Variables**:
+   - Database credentials (`DB_NAME`, `DB_USER`, etc.).
+   - Paths for input/output folders.
+
+3. **Execution**:
+   - Start REST API:
+     ```bash
+     Rscript rest/app.R
+     ```
+   - Launch Shiny App:
+     ```bash
+     Rscript shiny/app.R
+     ```
 
 ---
 
-## **9. Success Metrics**
+#### **10. Future Enhancements**
 
-1. **Performance**:
-   - Process single-patient VCF files in <5 minutes.
-2. **Accuracy**:
-   - Annotate variants with >95% match accuracy from external sources.
-3. **Usability**:
-   - Intuitive Shiny app for VCF uploads and result exploration.
+1. **Support for Additional Annotation Sources**:
+   - Integrate other pharmacogenomic datasets for richer annotations.
+
+2. **Improved Error Reporting**:
+   - Enhanced logging and notification for failures.
+
+3. **Scalability**:
+   - Add batch processing support for very large datasets using parallelization.
+
+4. **Integration with Analytics**:
+   - Provide annotated results for downstream analytics within VitalEdge.
 
 ---
 
-## **10. Conclusion**
-
-The **VitalEdge RxGen** module is designed to deliver high-quality pharmacogenomic annotations, laying the foundation for future VitalEdge pipelines. Its modular, reusable design ensures scalability and seamless integration within the ecosystem.
+### **Conclusion**
+This refactored design aligns RxGen with the broader VitalEdge data ingestion system while maintaining flexibility for manual use. It ensures modularity, scalability, and extensibility for future enhancements.

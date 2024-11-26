@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  rxgen:
+    build:
+      context: .
+      dockerfile: Dockerfile # Explicitly specify the Dockerfile if named differently
+    ports:
+      - "8000:8000" # For the API
+      - "3838:3838" # For the Shiny UI
+    volumes:
+      - /Users/samseatt/projects/vitaledge/data/loader/queued:/app/data/loader/queued # Mount VCF data directory
+    working_dir: /app
+    environment:
+      R_CONFIG_ACTIVE: "default" # Optional environment variable
+      DATABASE_USER: "samseatt"
+      DATABASE_PASSWORD: "password"
+      DATABASE_NAME: "vitaledge_datalake"
+      DATABASE_HOST: "host.docker.internal"
+      DATABASE_PORT: "5432"
+      SHINY_PORT: 3838
+      SHINY_HOST: "0.0.0.0"

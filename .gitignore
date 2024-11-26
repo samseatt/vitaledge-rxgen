@@ -32,3 +32,15 @@ Thumbs.db        # Windows
 *.rdata
 *.html
 
+# Secure configuration files
+config/database.yml
+
+# Work in progress
+docs-wip/
+
+# Data and results
+data/
+
+# Temporary files and folders
+temp/
+

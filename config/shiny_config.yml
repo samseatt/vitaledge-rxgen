@@ -1,0 +1,18 @@
+# Shiny app configuration
+shiny:
+  app_title: "VitalEdge RxGen"  # Title of the app
+  theme: "default"             # Theme for Shiny app
+  max_upload_size: 50          # Maximum upload size in MB
+
+# File paths
+files:
+  queued_dir: "data/queued"    # Directory for queued files
+  processed_dir: "data/processed"  # Directory for processed files
+
+# Database settings (optional, if Shiny interacts with the database)
+database:
+  host: "localhost"
+  port: 5432
+  name: "vitaledge_datalake"
+  user: "username"
+  password: "password"
